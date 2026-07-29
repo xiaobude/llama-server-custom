@@ -19,16 +19,16 @@ permissions:
 
 jobs:
   build-cuda-linux:
-    name: Build Linux CUDA llama-server
+    name: Build Linux CUDA 13.3 llama-server
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CUDA Toolkit
+      - name: Setup CUDA 13.3 Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda-version: '12.4.1'
+          cuda-version: '13.3.0'
 
       - name: Checkout llama.cpp source
         run: |
@@ -79,16 +79,16 @@ jobs:
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
 
   build-cuda-windows:
-    name: Build Windows 11 CUDA llama-server
+    name: Build Windows 11 CUDA 13.3 llama-server
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CUDA Toolkit
+      - name: Setup CUDA 13.3 Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda-version: '12.4.1'
+          cuda-version: '13.3.0'
 
       - name: Checkout llama.cpp source
         run: |
@@ -138,7 +138,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-win-x64.zip
 
   publish-release:
-    name: Publish Releases (Linux & Windows)
+    name: Publish Releases (Linux & Windows 11 CUDA 13.3)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -158,9 +158,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag_name || 'v1.1.0' }}
-          name: "llama-server Hardware Custom (RTX 5060 Ti + i5-13400)"
+          name: "llama-server Hardware Custom (CUDA 13.3 - RTX 5060 Ti + i5-13400)"
           body: |
-            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (Linux & Windows 11)
+            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (CUDA 13.3)
+            - **CUDA Toolkit**: 13.3
             - **CUDA Arch**: RTX 5060 Ti / Ada / Blackwell (89, 90) + FlashAttention
             - **CPU Flags**: AVX2, FMA, F16C
             - **Platforms**: Linux x64 (`.tar.gz`) & Windows 11 x64 (`.zip`)
