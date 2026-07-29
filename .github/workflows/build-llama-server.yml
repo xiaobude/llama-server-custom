@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v1.1.0'
+        default: 'v1.2.0'
   push:
     tags:
       - 'v*'
@@ -19,16 +19,16 @@ permissions:
 
 jobs:
   build-cuda-linux:
-    name: Build Linux CUDA 13.3 llama-server
+    name: Build Linux CUDA llama-server
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CUDA 13.3 Toolkit
+      - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda-version: '13.3.0'
+          cuda-version: '12.4.1'
 
       - name: Checkout llama.cpp source
         run: |
@@ -41,6 +41,7 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=OFF \
+            -DCUDA_USE_STATIC_CUDA_RUNTIME=ON \
             -DGGML_CUDA=ON \
             -DCMAKE_CUDA_ARCHITECTURES="89;90" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
@@ -79,16 +80,16 @@ jobs:
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
 
   build-cuda-windows:
-    name: Build Windows 11 CUDA 13.3 llama-server
+    name: Build Windows 11 CUDA llama-server (with CUDA Runtime DLLs)
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CUDA 13.3 Toolkit
+      - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda-version: '13.3.0'
+          cuda-version: '12.4.1'
 
       - name: Checkout llama.cpp source
         run: |
@@ -102,6 +103,7 @@ jobs:
           cmake .. ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DBUILD_SHARED_LIBS=OFF ^
+            -DCUDA_USE_STATIC_CUDA_RUNTIME=ON ^
             -DGGML_CUDA=ON ^
             -DCMAKE_CUDA_ARCHITECTURES="89;90" ^
             -DGGML_CUDA_FA_ALL_QUANTS=ON ^
@@ -122,13 +124,21 @@ jobs:
           cd llama-source\build
           cmake --build . --config Release --target llama-server -j 4
 
-      - name: Package Windows Binary
+      - name: Package Windows Binary and CUDA DLLs
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist
           $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
           Copy-Item $exe.FullName -Destination dist\llama-server.exe
           Copy-Item start_server.bat -Destination dist\start_server.bat
+
+          # Copy CUDA Runtime DLLs (cudart64_*.dll, cublas*.dll)
+          if (Test-Path env:CUDA_PATH) {
+              Write-Host "Copying CUDA DLLs from $env:CUDA_PATH\bin ..."
+              Get-ChildItem -Path "$env:CUDA_PATH\bin\*.dll" | Copy-Item -Destination dist\ -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem -Path dist
+
           Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-x64.zip
 
       - name: Upload Windows Artifact
@@ -138,7 +148,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-win-x64.zip
 
   publish-release:
-    name: Publish Releases (Linux & Windows 11 CUDA 13.3)
+    name: Publish Releases (Linux & Windows 11 with CUDA DLLs)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -157,15 +167,14 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v1.1.0' }}
-          name: "llama-server Hardware Custom (CUDA 13.3 - RTX 5060 Ti + i5-13400)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v1.2.0' }}
+          name: "llama-server Hardware Custom v1.2.0 (RTX 5060 Ti + i5-13400)"
           body: |
-            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (CUDA 13.3)
-            - **CUDA Toolkit**: 13.3
+            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (v1.2.0)
             - **CUDA Arch**: RTX 5060 Ti / Ada / Blackwell (89, 90) + FlashAttention
             - **CPU Flags**: AVX2, FMA, F16C
+            - **Fix**: Bundled `cudart64_12.dll` and CUDA runtime DLLs in Windows `.zip` package.
             - **Platforms**: Linux x64 (`.tar.gz`) & Windows 11 x64 (`.zip`)
-            - **Optimizations**: Minimal single-binary build with pre-configured start scripts.
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
