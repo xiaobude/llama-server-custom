@@ -40,7 +40,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
 
-      - name: Configure CMake (Custom Tailored Options)
+      - name: Configure CMake (Target RTX 5060 Ti / Ada / Blackwell)
         run: |
           cd llama-source
           mkdir build && cd build
@@ -48,7 +48,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=OFF \
             -DGGML_CUDA=ON \
-            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90" \
+            -DCMAKE_CUDA_ARCHITECTURES="89;90" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_TESTS=OFF \
@@ -74,6 +74,7 @@ jobs:
             BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
           fi
           echo "Found binary at: $BIN_PATH"
+          ls -lh "$BIN_PATH"
           strip "$BIN_PATH" || true
           cp "$BIN_PATH" dist/
           if ls llama-source/build/bin/*.so* 1> /dev/null 2>&1; then
@@ -96,7 +97,7 @@ jobs:
           name: "llama-server Hardware Custom (RTX 5060 Ti + i5-13400)"
           body: |
             ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400
-            - **CUDA Arch**: Ampere/Ada/Blackwell (75, 80, 86, 89, 90) + FlashAttention
+            - **CUDA Arch**: RTX 5060 Ti / Ada / Blackwell (89, 90) + FlashAttention
             - **CPU Flags**: AVX2, FMA, F16C
             - **Optimizations**: Stripped minimal single-binary build, zero unused dependencies.
           files: dist/llama-server-rtx5060ti-linux-x64.tar.gz
