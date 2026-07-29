@@ -2,8 +2,20 @@ name: Build Tailored llama-server for Hardware (RTX 5060 Ti + i5-13400)
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag'
+        required: true
+        default: 'v1.0.0'
   push:
-    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+    branches:
+      - 'main'
+      - 'master'
+
+permissions:
+  contents: write
 
 jobs:
   build-cuda-server:
@@ -34,6 +46,7 @@ jobs:
           mkdir build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
             -DGGML_CUDA=ON \
             -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
@@ -55,18 +68,19 @@ jobs:
 
       - name: Strip & Package Binary
         run: |
-          cd llama-source/build
-          # Find llama-server binary location
-          SERVER_BIN=$(find . -name "llama-server" -type f | head -n 1)
-          if [ -z "$SERVER_BIN" ]; then
-            echo "llama-server binary not found!"
-            exit 1
+          mkdir -p dist
+          BIN_PATH="llama-source/build/bin/llama-server"
+          if [ ! -f "$BIN_PATH" ]; then
+            BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
           fi
-          strip "$SERVER_BIN"
-          mkdir -p ../../dist
-          cp "$SERVER_BIN" ../../dist/llama-server
-          cd ../../dist
-          tar -czvf llama-server-rtx5060ti-linux-x64.tar.gz llama-server
+          echo "Found binary at: $BIN_PATH"
+          strip "$BIN_PATH" || true
+          cp "$BIN_PATH" dist/
+          if ls llama-source/build/bin/*.so* 1> /dev/null 2>&1; then
+            cp llama-source/build/bin/*.so* dist/
+          fi
+          cd dist
+          tar -czvf llama-server-rtx5060ti-linux-x64.tar.gz *
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -74,3 +88,17 @@ jobs:
           name: llama-server-rtx5060ti-custom
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
           retention-days: 7
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || 'v1.0.0' }}
+          name: "llama-server Hardware Custom (RTX 5060 Ti + i5-13400)"
+          body: |
+            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400
+            - **CUDA Arch**: Ampere/Ada/Blackwell (75, 80, 86, 89, 90) + FlashAttention
+            - **CPU Flags**: AVX2, FMA, F16C
+            - **Optimizations**: Stripped minimal single-binary build, zero unused dependencies.
+          files: dist/llama-server-rtx5060ti-linux-x64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
