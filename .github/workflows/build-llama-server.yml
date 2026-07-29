@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v1.3.0'
+        default: 'v1.3.2'
   push:
     tags:
       - 'v*'
@@ -19,16 +19,16 @@ permissions:
 
 jobs:
   build-cuda-linux:
-    name: Build Linux CUDA Standalone llama-server
+    name: Build Linux CUDA 13.2 llama-server
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CUDA Toolkit
+      - name: Setup CUDA 13.2 Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda-version: '12.4.1'
+          cuda-version: '13.2.0'
 
       - name: Checkout llama.cpp source
         run: |
@@ -43,7 +43,6 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON \
             -DGGML_CUDA=ON \
-            -DGGML_CUDA_FORCE_CUBLAS=OFF \
             -DCMAKE_CUDA_ARCHITECTURES="89;90" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
             -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -81,22 +80,22 @@ jobs:
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
 
   build-cuda-windows:
-    name: Build Windows 11 True Single-Binary llama-server (Zero DLL Dependency)
+    name: Build Windows 11 CUDA 13.2 llama-server
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CUDA Toolkit
+      - name: Setup CUDA 13.2 Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
         with:
-          cuda-version: '12.4.1'
+          cuda-version: '13.2.0'
 
       - name: Checkout llama.cpp source
         run: |
           git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
 
-      - name: Configure CMake (Native GGML CUDA Quant Kernels, Zero cuBLAS DLLs)
+      - name: Configure CMake (Targeting CUDA 13.2)
         shell: cmd
         run: |
           cd llama-source
@@ -106,7 +105,6 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF ^
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON ^
             -DGGML_CUDA=ON ^
-            -DGGML_CUDA_FORCE_CUBLAS=OFF ^
             -DCMAKE_CUDA_ARCHITECTURES="89;90" ^
             -DGGML_CUDA_FA_ALL_QUANTS=ON ^
             -DLLAMA_BUILD_EXAMPLES=OFF ^
@@ -126,7 +124,7 @@ jobs:
           cd llama-source\build
           cmake --build . --config Release --target llama-server -j 4
 
-      - name: Package True Standalone Executable
+      - name: Package Executable for CUDA 13.2
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -134,16 +132,16 @@ jobs:
           Copy-Item $exe.FullName -Destination dist\llama-server.exe
           Copy-Item start_server.bat -Destination dist\start_server.bat
           Get-ChildItem -Path dist
-          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-x64.zip
+          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-cuda13.2.zip
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifact
-          path: dist/llama-server-rtx5060ti-win-x64.zip
+          path: dist/llama-server-rtx5060ti-win-cuda13.2.zip
 
   publish-release:
-    name: Publish True Standalone Releases (Zero DLL)
+    name: Publish CUDA 13.2 Releases
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -162,14 +160,14 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v1.3.0' }}
-          name: "llama-server Pure Single-Binary v1.3.0 (Zero DLL Dependency)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v1.3.2' }}
+          name: "llama-server Hardware Custom v1.3.2 (CUDA 13.2 - RTX 5060 Ti + i5-13400)"
           body: |
-            ## Pure Standalone llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (v1.3.0)
-            - **Zero DLL Dependency**: `GGML_CUDA_FORCE_CUBLAS=OFF` + `-DCUDA_USE_STATIC_CUDA_RUNTIME=ON`
-            - **CUDA Kernels**: Native ggml-cuda quant kernels (FlashAttention + mmq) for Ada/Blackwell (89, 90)
+            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (CUDA 13.2)
+            - **CUDA Version**: CUDA 13.2 (Native linkage to local `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin`)
+            - **CUDA Arch**: RTX 5060 Ti / Ada / Blackwell (89, 90) + FlashAttention
             - **CPU Flags**: AVX2, FMA, F16C
-            - **Single Binary**: 100% standalone `llama-server.exe` with zero external DLL requirement!
+            - **Zero Local DLLs Needed**: Reads system CUDA 13.2 DLLs (`*_13.dll`) automatically from System PATH.
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
