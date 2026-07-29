@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v2.1.0'
+        default: 'v2.1.1'
   push:
     tags:
       - 'v*'
@@ -39,13 +39,15 @@ jobs:
       - name: Configure CMake
         run: |
           cd llama-source
-          TAG_NAME=$(git describe --tags --abbrev=0 2>/dev/null || echo "b10181")
+          TAG_RAW=$(git describe --tags --abbrev=0 2>/dev/null || echo "b10181")
+          TAG_NUM=$(echo "$TAG_RAW" | sed 's/[^0-9]//g')
+          if [ -z "$TAG_NUM" ]; then TAG_NUM="10181"; fi
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "custom")
-          echo "Building llama.cpp version: $TAG_NAME ($COMMIT_HASH)"
+          echo "Building llama.cpp build number: $TAG_NUM ($COMMIT_HASH)"
           mkdir build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
-            -DLLAMA_BUILD_NUMBER="$TAG_NAME" \
+            -DLLAMA_BUILD_NUMBER=$TAG_NUM \
             -DLLAMA_BUILD_COMMIT="$COMMIT_HASH" \
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DBUILD_SHARED_LIBS=OFF \
@@ -109,17 +111,19 @@ jobs:
         shell: powershell
         run: |
           Set-Location llama-source
-          $tagName = (git describe --tags --abbrev=0 2>$null)
-          if (-not $tagName) { $tagName = "b10181" }
+          $tagRaw = (git describe --tags --abbrev=0 2>$null)
+          if (-not $tagRaw) { $tagRaw = "b10181" }
+          $tagNum = ($tagRaw -replace '[^0-9]', '')
+          if (-not $tagNum) { $tagNum = "10181" }
           $commitHash = (git rev-parse --short HEAD 2>$null)
           if (-not $commitHash) { $commitHash = "custom" }
-          Write-Host "Building llama.cpp version: $tagName ($commitHash)"
+          Write-Host "Building llama.cpp build number: $tagNum ($commitHash)"
 
           New-Item -ItemType Directory -Force -Path build
           Set-Location build
           cmake .. `
             -DCMAKE_BUILD_TYPE=Release `
-            -DLLAMA_BUILD_NUMBER="$tagName" `
+            -DLLAMA_BUILD_NUMBER=$tagNum `
             -DLLAMA_BUILD_COMMIT="$commitHash" `
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static `
             -DBUILD_SHARED_LIBS=OFF `
@@ -161,16 +165,16 @@ jobs:
           Copy-Item $exe.FullName -Destination dist\llama-server.exe
           Copy-Item start_server.bat -Destination dist\start_server.bat
           Get-ChildItem -Path dist
-          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-v2.1.zip
+          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-x64.zip
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifact
-          path: dist/llama-server-rtx5060ti-win-v2.1.zip
+          path: dist/llama-server-rtx5060ti-win-x64.zip
 
   publish-release:
-    name: Publish True Standalone Releases (Zero DLL & Version Tag)
+    name: Publish True Standalone Releases (Zero DLL & Version Tag 10181)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -189,12 +193,12 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v2.1.0' }}
-          name: "llama-server Pure Single-Binary v2.1.0 (Tag b10181 Enabled)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v2.1.1' }}
+          name: "llama-server Pure Single-Binary v2.1.1 (Build 10181)"
           body: |
-            ## Pure Standalone llama-server v2.1.0 (RTX 5060 Ti 16GB + Intel i5-13400)
-            - **Version Tag Display**: Fixed `--version` output to show official release tag `b10181` instead of `1`.
-            - **Zero DLL Requirement**: Verified 100% static CUDA runtime (`cudart_static.lib`) embedding with zero `cudart64_*.dll` dependency.
+            ## Pure Standalone llama-server v2.1.1 (RTX 5060 Ti 16GB + Intel i5-13400)
+            - **Version Tag Display**: `--version` outputs official build number `10181`.
+            - **Zero DLL Requirement**: 100% static CUDA runtime (`cudart_static.lib`) embedding with zero `cudart64_*.dll` dependency.
             - **CUDA Kernels**: Native ggml-cuda quant kernels (FlashAttention + mmq) for Ada/Blackwell (89, 90)
             - **CPU Flags**: AVX2, FMA, F16C
           files: release-files/*
