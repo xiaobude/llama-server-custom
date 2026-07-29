@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v3.0.0'
+        default: 'v3.1.0'
   push:
     tags:
       - 'v*'
@@ -19,46 +19,54 @@ permissions:
 
 jobs:
   build-cuda-linux:
-    name: Build Linux CUDA Standalone llama-server
+    name: Build Linux CUDA Standalone llama-server (sm_120)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 升级到支持 CUDA 12.8+/13.x 的 action 版本；v0.2.19 太旧，链接表里没有 Blackwell 对应的版本
       - name: Setup CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.19
+        uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '12.4.1'
+          cuda: '13.2.0'   # 与本地环境保持一致；sm_120 (Blackwell) 最低要求 12.8+
 
-      - name: Checkout llama.cpp source
+      - name: Checkout llama.cpp source & resolve build number
         run: |
-          git clone --depth 50 https://github.com/ggerganov/llama.cpp.git llama-source
+          # 仓库已迁移到 ggml-org（ggerganov/llama.cpp 仍会跳转，但直接用新地址更稳）
+          git clone --depth 50 https://github.com/ggml-org/llama.cpp.git llama-source
           cd llama-source
-          git fetch --tags --depth=50 || true
-          # Force CUDA::cudart_static in CMakeLists.txt
-          find . -name "CMakeLists.txt" -exec sed -i 's/CUDA::cudart /CUDA::cudart_static /g' {} +
-          find . -name "CMakeLists.txt" -exec sed -i 's/CUDA::cudart)/CUDA::cudart_static)/g' {} +
+          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "custom")
+
+          # 浅克隆下 git describe 基本取不到 tag，改用 GitHub API 查最新 release 作为 build number 来源
+          TAG_RAW=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | grep -o '"tag_name": *"[^"]*"' | sed 's/.*"tag_name": *"//;s/"//')
+          TAG_NUM=$(echo "$TAG_RAW" | sed 's/[^0-9]//g')
+          if [ -z "$TAG_NUM" ]; then TAG_NUM="0"; fi
+          echo "Resolved llama.cpp build number: $TAG_NUM ($COMMIT_HASH)"
+          echo "TAG_NUM=$TAG_NUM" >> $GITHUB_ENV
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_ENV
+
+          # 静态链接补丁：只改 cudart 是不够的，cuBLAS / cuBLASLt 官方 DLL 在运行时又依赖 cudart64_*.dll，
+          # 三者必须一起改成 _static 版本才能做到真正的零 DLL 依赖。注意顺序：先 cublasLt 再 cublas。
+          find . -name "CMakeLists.txt" -exec sed -i \
+            -e 's/CUDA::cudart\b/CUDA::cudart_static/g' \
+            -e 's/CUDA::cublasLt\b/CUDA::cublasLt_static/g' \
+            -e 's/CUDA::cublas\b/CUDA::cublas_static/g' \
+            {} +
 
       - name: Configure CMake
         run: |
           cd llama-source
-          TAG_RAW=$(git describe --tags --abbrev=0 2>/dev/null || echo "b10181")
-          TAG_NUM=$(echo "$TAG_RAW" | sed 's/[^0-9]//g')
-          if [ -z "$TAG_NUM" ]; then TAG_NUM="10181"; fi
-          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "custom")
-          echo "Building llama.cpp build number: $TAG_NUM ($COMMIT_HASH)"
           mkdir build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
-            -DLLAMA_BUILD_NUMBER=$TAG_NUM \
-            -DLLAMA_BUILD_COMMIT="$COMMIT_HASH" \
-            -DGGML_STATIC=ON \
+            -DLLAMA_BUILD_NUMBER=${{ env.TAG_NUM }} \
+            -DLLAMA_BUILD_COMMIT="${{ env.COMMIT_HASH }}" \
             -DBUILD_SHARED_LIBS=OFF \
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON \
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DGGML_CUDA=ON \
-            -DGGML_CUDA_FORCE_CUBLAS=OFF \
-            -DCMAKE_CUDA_ARCHITECTURES="89;90" \
+            -DCMAKE_CUDA_ARCHITECTURES="120" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_TESTS=OFF \
@@ -76,13 +84,20 @@ jobs:
           cd llama-source/build
           cmake --build . --config Release --target llama-server -j$(nproc)
 
+      - name: Verify no dynamic CUDA dependencies
+        run: |
+          BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
+          echo "Checking $BIN_PATH"
+          ldd "$BIN_PATH" || true
+          if ldd "$BIN_PATH" | grep -qiE 'libcudart|libcublas'; then
+            echo "::error::仍然动态链接了 CUDA 运行时/cuBLAS，静态化补丁未生效"
+            exit 1
+          fi
+
       - name: Package Binary
         run: |
           mkdir -p dist
-          BIN_PATH="llama-source/build/bin/llama-server"
-          if [ ! -f "$BIN_PATH" ]; then
-            BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
-          fi
+          BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
           strip "$BIN_PATH" || true
           cp "$BIN_PATH" dist/
           cd dist
@@ -95,55 +110,60 @@ jobs:
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
 
   build-cuda-windows:
-    name: Build Windows 11 True Single-Binary llama-server (Zero DLL)
+    name: Build Windows 11 True Single-Binary llama-server (sm_120, Zero DLL)
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.19
+        uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '12.4.1'
+          cuda: '13.2.0'
 
       - name: Checkout llama.cpp source & Patch Static CUDA Linkage
         shell: powershell
         run: |
-          git clone --depth 50 https://github.com/ggerganov/llama.cpp.git llama-source
-          cd llama-source
-          git fetch --tags --depth=50 || true
-          # Patch all CMakeLists.txt files to replace CUDA::cudart with CUDA::cudart_static
+          git clone --depth 50 https://github.com/ggml-org/llama.cpp.git llama-source
+          Set-Location llama-source
+          $commitHash = (git rev-parse --short HEAD 2>$null)
+          if (-not $commitHash) { $commitHash = "custom" }
+
+          $tagRaw = ""
+          try {
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+            $tagRaw = $release.tag_name
+          } catch { $tagRaw = "" }
+          $tagNum = ($tagRaw -replace '[^0-9]', '')
+          if (-not $tagNum) { $tagNum = "0" }
+          Write-Host "Resolved llama.cpp build number: $tagNum ($commitHash)"
+          echo "TAG_NUM=$tagNum" >> $env:GITHUB_ENV
+          echo "COMMIT_HASH=$commitHash" >> $env:GITHUB_ENV
+
+          # 同 Linux 侧：cudart / cublas / cublasLt 三个都要打静态补丁，缺一个都会在运行时拉回对应 DLL
           Get-ChildItem -Path . -Recurse -Filter "CMakeLists.txt" | ForEach-Object {
               $content = Get-Content $_.FullName -Raw
               $content = $content -replace 'CUDA::cudart\b', 'CUDA::cudart_static'
+              $content = $content -replace 'CUDA::cublasLt\b', 'CUDA::cublasLt_static'
+              $content = $content -replace 'CUDA::cublas\b', 'CUDA::cublas_static'
               Set-Content $_.FullName $content
           }
 
-      - name: Configure CMake (GGML_STATIC=ON & FORCE CUDA::cudart_static)
+      - name: Configure CMake (static CUDA runtime + cuBLAS, sm_120)
         shell: powershell
         run: |
           Set-Location llama-source
-          $tagRaw = (git describe --tags --abbrev=0 2>$null)
-          if (-not $tagRaw) { $tagRaw = "b10181" }
-          $tagNum = ($tagRaw -replace '[^0-9]', '')
-          if (-not $tagNum) { $tagNum = "10181" }
-          $commitHash = (git rev-parse --short HEAD 2>$null)
-          if (-not $commitHash) { $commitHash = "custom" }
-          Write-Host "Building llama.cpp build number: $tagNum ($commitHash)"
-
           New-Item -ItemType Directory -Force -Path build
           Set-Location build
           cmake .. `
             -DCMAKE_BUILD_TYPE=Release `
-            -DLLAMA_BUILD_NUMBER=$tagNum `
-            -DLLAMA_BUILD_COMMIT="$commitHash" `
-            -DGGML_STATIC=ON `
+            -DLLAMA_BUILD_NUMBER=${{ env.TAG_NUM }} `
+            -DLLAMA_BUILD_COMMIT="${{ env.COMMIT_HASH }}" `
             -DBUILD_SHARED_LIBS=OFF `
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON `
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static `
             -DGGML_CUDA=ON `
-            -DGGML_CUDA_FORCE_CUBLAS=OFF `
-            -DCMAKE_CUDA_ARCHITECTURES="89;90" `
+            -DCMAKE_CUDA_ARCHITECTURES="120" `
             -DGGML_CUDA_FA_ALL_QUANTS=ON `
             -DLLAMA_BUILD_EXAMPLES=OFF `
             -DLLAMA_BUILD_TESTS=OFF `
@@ -162,14 +182,17 @@ jobs:
           cd llama-source\build
           cmake --build . --config Release --target llama-server -j 4
 
-      - name: Verify Dependencies with dumpbin
-        shell: cmd
+      - name: Verify Dependencies with dumpbin (must NOT show cudart/cublas DLLs)
+        shell: powershell
         run: |
-          cd llama-source\build
-          for /r %%i in (llama-server.exe) do (
-            echo Found %%i
-            dumpbin /DEPENDENTS "%%i" || true
-          )
+          $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
+          Write-Host "Found $($exe.FullName)"
+          $deps = & dumpbin /DEPENDENTS "$($exe.FullName)" 2>&1
+          $deps | Write-Host
+          if ($deps -match 'cudart64|cublas64|cublasLt64') {
+            Write-Error "仍然动态依赖 cudart/cublas 相关 DLL，静态化补丁未完全生效"
+            exit 1
+          }
 
       - name: Package True Standalone Executable
         shell: powershell
@@ -188,7 +211,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-win-v3.zip
 
   publish-release:
-    name: Publish True Standalone Releases (Zero DLL)
+    name: Publish True Standalone Releases (Zero DLL, sm_120)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -207,15 +230,15 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v3.0.0' }}
-          name: "llama-server Pure Single-Binary v3.0.0 (Zero DLL Verified)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v3.1.0' }}
+          name: "llama-server Pure Single-Binary v3.1.0 (Zero DLL Verified, sm_120)"
           body: |
-            ## Pure Standalone llama-server v3.0.0 (RTX 5060 Ti 16GB + Intel i5-13400)
-            - **Root Cause Solved**: Patched `ggml/src/ggml-cuda/CMakeLists.txt` to force `CUDA::cudart_static` + set `-DGGML_STATIC=ON`.
-            - **Zero DLL Requirement**: 100% static CUDA runtime (`cudart_static.lib`) embedding with ZERO `cudart64_*.dll` dependency.
-            - **Version Display**: `--version` outputs official build number `10181`.
-            - **CUDA Kernels**: Native ggml-cuda quant kernels (FlashAttention + mmq) for Ada/Blackwell (89, 90)
-            - **CPU Flags**: AVX2, FMA, F16C
+            ## Pure Standalone llama-server (RTX 5060 Ti 16GB, Blackwell sm_120 + Intel i5-13400)
+            - **Target arch fixed**: `CMAKE_CUDA_ARCHITECTURES=120` (previous build mistakenly targeted 89/90, i.e. Ada/Hopper, not Blackwell).
+            - **Toolchain**: CUDA Toolkit 13.2 via updated `Jimver/cuda-toolkit@v0.2.35` (old v0.2.19 pin didn't support 12.8+/13.x links).
+            - **Zero DLL Requirement**: cudart, cuBLAS and cuBLASLt all patched to their `_static` CMake targets — previous build only patched cudart, so cublas64_*.dll pulled cudart64_*.dll back in transitively.
+            - **CI now fails loudly** if any dynamic CUDA/cuBLAS dependency slips back in (see verification steps).
+            - **CPU Flags**: AVX2, FMA, F16C (matches i5-13400; no AVX-512, it's fused off on 12th/13th gen consumer parts).
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
