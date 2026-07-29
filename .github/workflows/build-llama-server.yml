@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v2.0.0'
+        default: 'v2.1.0'
   push:
     tags:
       - 'v*'
@@ -32,14 +32,21 @@ jobs:
 
       - name: Checkout llama.cpp source
         run: |
-          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
+          git clone --depth 50 https://github.com/ggerganov/llama.cpp.git llama-source
+          cd llama-source
+          git fetch --tags --depth=50 || true
 
       - name: Configure CMake
         run: |
           cd llama-source
+          TAG_NAME=$(git describe --tags --abbrev=0 2>/dev/null || echo "b10181")
+          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "custom")
+          echo "Building llama.cpp version: $TAG_NAME ($COMMIT_HASH)"
           mkdir build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_NUMBER="$TAG_NAME" \
+            -DLLAMA_BUILD_COMMIT="$COMMIT_HASH" \
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DBUILD_SHARED_LIBS=OFF \
             -DGGML_CUDA=ON \
@@ -94,30 +101,41 @@ jobs:
 
       - name: Checkout llama.cpp source
         run: |
-          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
-
-      - name: Configure CMake (Force CMAKE_CUDA_RUNTIME_LIBRARY=Static)
-        shell: cmd
-        run: |
+          git clone --depth 50 https://github.com/ggerganov/llama.cpp.git llama-source
           cd llama-source
-          mkdir build && cd build
-          cmake .. ^
-            -DCMAKE_BUILD_TYPE=Release ^
-            -DCMAKE_CUDA_RUNTIME_LIBRARY=Static ^
-            -DBUILD_SHARED_LIBS=OFF ^
-            -DGGML_CUDA=ON ^
-            -DGGML_CUDA_FORCE_CUBLAS=OFF ^
-            -DCMAKE_CUDA_ARCHITECTURES="89;90" ^
-            -DGGML_CUDA_FA_ALL_QUANTS=ON ^
-            -DLLAMA_BUILD_EXAMPLES=OFF ^
-            -DLLAMA_BUILD_TESTS=OFF ^
-            -DLLAMA_BUILD_SERVER=ON ^
-            -DGGML_NATIVE=OFF ^
-            -DGGML_AVX2=ON ^
-            -DGGML_FMA=ON ^
-            -DGGML_F16C=ON ^
-            -DGGML_VULKAN=OFF ^
-            -DGGML_SYCL=OFF ^
+          git fetch --tags --depth=50 || true
+
+      - name: Configure CMake (Force CMAKE_CUDA_RUNTIME_LIBRARY=Static & Build Tag)
+        shell: powershell
+        run: |
+          Set-Location llama-source
+          $tagName = (git describe --tags --abbrev=0 2>$null)
+          if (-not $tagName) { $tagName = "b10181" }
+          $commitHash = (git rev-parse --short HEAD 2>$null)
+          if (-not $commitHash) { $commitHash = "custom" }
+          Write-Host "Building llama.cpp version: $tagName ($commitHash)"
+
+          New-Item -ItemType Directory -Force -Path build
+          Set-Location build
+          cmake .. `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLAMA_BUILD_NUMBER="$tagName" `
+            -DLLAMA_BUILD_COMMIT="$commitHash" `
+            -DCMAKE_CUDA_RUNTIME_LIBRARY=Static `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DGGML_CUDA=ON `
+            -DGGML_CUDA_FORCE_CUBLAS=OFF `
+            -DCMAKE_CUDA_ARCHITECTURES="89;90" `
+            -DGGML_CUDA_FA_ALL_QUANTS=ON `
+            -DLLAMA_BUILD_EXAMPLES=OFF `
+            -DLLAMA_BUILD_TESTS=OFF `
+            -DLLAMA_BUILD_SERVER=ON `
+            -DGGML_NATIVE=OFF `
+            -DGGML_AVX2=ON `
+            -DGGML_FMA=ON `
+            -DGGML_F16C=ON `
+            -DGGML_VULKAN=OFF `
+            -DGGML_SYCL=OFF `
             -DGGML_KOMPUTE=OFF
 
       - name: Build llama-server
@@ -143,16 +161,16 @@ jobs:
           Copy-Item $exe.FullName -Destination dist\llama-server.exe
           Copy-Item start_server.bat -Destination dist\start_server.bat
           Get-ChildItem -Path dist
-          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-v2.zip
+          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-v2.1.zip
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifact
-          path: dist/llama-server-rtx5060ti-win-v2.zip
+          path: dist/llama-server-rtx5060ti-win-v2.1.zip
 
   publish-release:
-    name: Publish True Standalone Releases (Zero DLL)
+    name: Publish True Standalone Releases (Zero DLL & Version Tag)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -171,11 +189,11 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v2.0.0' }}
-          name: "llama-server Pure Single-Binary v2.0.0 (Zero DLL Guaranteed)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v2.1.0' }}
+          name: "llama-server Pure Single-Binary v2.1.0 (Tag b10181 Enabled)"
           body: |
-            ## Pure Standalone llama-server v2.0.0 (RTX 5060 Ti 16GB + Intel i5-13400)
-            - **Root Cause Fix**: Switched `cuda-version` to `cuda: '12.4.1'` for Jimver action + forced `-DCMAKE_CUDA_RUNTIME_LIBRARY=Static` in MSVC CMake configuration.
+            ## Pure Standalone llama-server v2.1.0 (RTX 5060 Ti 16GB + Intel i5-13400)
+            - **Version Tag Display**: Fixed `--version` output to show official release tag `b10181` instead of `1`.
             - **Zero DLL Requirement**: Verified 100% static CUDA runtime (`cudart_static.lib`) embedding with zero `cudart64_*.dll` dependency.
             - **CUDA Kernels**: Native ggml-cuda quant kernels (FlashAttention + mmq) for Ada/Blackwell (89, 90)
             - **CPU Flags**: AVX2, FMA, F16C
