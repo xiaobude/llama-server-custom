@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v1.2.0'
+        default: 'v1.3.0'
   push:
     tags:
       - 'v*'
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-cuda-linux:
-    name: Build Linux CUDA llama-server
+    name: Build Linux CUDA Standalone llama-server
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository
@@ -43,6 +43,7 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON \
             -DGGML_CUDA=ON \
+            -DGGML_CUDA_FORCE_CUBLAS=OFF \
             -DCMAKE_CUDA_ARCHITECTURES="89;90" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
             -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -80,7 +81,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
 
   build-cuda-windows:
-    name: Build Windows 11 CUDA llama-server (with CUDA Runtime DLLs)
+    name: Build Windows 11 True Single-Binary llama-server (Zero DLL Dependency)
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
@@ -95,7 +96,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
 
-      - name: Configure CMake
+      - name: Configure CMake (Native GGML CUDA Quant Kernels, Zero cuBLAS DLLs)
         shell: cmd
         run: |
           cd llama-source
@@ -105,6 +106,7 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF ^
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON ^
             -DGGML_CUDA=ON ^
+            -DGGML_CUDA_FORCE_CUBLAS=OFF ^
             -DCMAKE_CUDA_ARCHITECTURES="89;90" ^
             -DGGML_CUDA_FA_ALL_QUANTS=ON ^
             -DLLAMA_BUILD_EXAMPLES=OFF ^
@@ -124,21 +126,14 @@ jobs:
           cd llama-source\build
           cmake --build . --config Release --target llama-server -j 4
 
-      - name: Package Windows Binary and CUDA DLLs
+      - name: Package True Standalone Executable
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist
           $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
           Copy-Item $exe.FullName -Destination dist\llama-server.exe
           Copy-Item start_server.bat -Destination dist\start_server.bat
-
-          # Copy CUDA Runtime DLLs (cudart64_*.dll, cublas*.dll)
-          if (Test-Path env:CUDA_PATH) {
-              Write-Host "Copying CUDA DLLs from $env:CUDA_PATH\bin ..."
-              Get-ChildItem -Path "$env:CUDA_PATH\bin\*.dll" | Copy-Item -Destination dist\ -ErrorAction SilentlyContinue
-          }
           Get-ChildItem -Path dist
-
           Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-x64.zip
 
       - name: Upload Windows Artifact
@@ -148,7 +143,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-win-x64.zip
 
   publish-release:
-    name: Publish Releases (Linux & Windows 11 with CUDA DLLs)
+    name: Publish True Standalone Releases (Zero DLL)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -167,14 +162,14 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v1.2.0' }}
-          name: "llama-server Hardware Custom v1.2.0 (RTX 5060 Ti + i5-13400)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v1.3.0' }}
+          name: "llama-server Pure Single-Binary v1.3.0 (Zero DLL Dependency)"
           body: |
-            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (v1.2.0)
-            - **CUDA Arch**: RTX 5060 Ti / Ada / Blackwell (89, 90) + FlashAttention
+            ## Pure Standalone llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (v1.3.0)
+            - **Zero DLL Dependency**: `GGML_CUDA_FORCE_CUBLAS=OFF` + `-DCUDA_USE_STATIC_CUDA_RUNTIME=ON`
+            - **CUDA Kernels**: Native ggml-cuda quant kernels (FlashAttention + mmq) for Ada/Blackwell (89, 90)
             - **CPU Flags**: AVX2, FMA, F16C
-            - **Fix**: Bundled `cudart64_12.dll` and CUDA runtime DLLs in Windows `.zip` package.
-            - **Platforms**: Linux x64 (`.tar.gz`) & Windows 11 x64 (`.zip`)
+            - **Single Binary**: 100% standalone `llama-server.exe` with zero external DLL requirement!
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
