@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.1.0'
   push:
     tags:
       - 'v*'
@@ -18,18 +18,12 @@ permissions:
   contents: write
 
 jobs:
-  build-cuda-server:
-    name: Build Minimal CUDA llama-server
+  build-cuda-linux:
+    name: Build Linux CUDA llama-server
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Free Disk Space on Runner
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo apt-get clean
 
       - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.19
@@ -40,7 +34,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
 
-      - name: Configure CMake (Target RTX 5060 Ti / Ada / Blackwell)
+      - name: Configure CMake
         run: |
           cd llama-source
           mkdir build && cd build
@@ -66,40 +60,111 @@ jobs:
           cd llama-source/build
           cmake --build . --config Release --target llama-server -j$(nproc)
 
-      - name: Strip & Package Binary
+      - name: Package Binary
         run: |
           mkdir -p dist
           BIN_PATH="llama-source/build/bin/llama-server"
           if [ ! -f "$BIN_PATH" ]; then
             BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
           fi
-          echo "Found binary at: $BIN_PATH"
-          ls -lh "$BIN_PATH"
           strip "$BIN_PATH" || true
           cp "$BIN_PATH" dist/
-          if ls llama-source/build/bin/*.so* 1> /dev/null 2>&1; then
-            cp llama-source/build/bin/*.so* dist/
-          fi
           cd dist
           tar -czvf llama-server-rtx5060ti-linux-x64.tar.gz *
 
-      - name: Upload Artifact
+      - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: llama-server-rtx5060ti-custom
+          name: linux-artifact
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
-          retention-days: 7
+
+  build-cuda-windows:
+    name: Build Windows 11 CUDA llama-server
+    runs-on: windows-2022
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda-version: '12.4.1'
+
+      - name: Checkout llama.cpp source
+        run: |
+          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama-source
+
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          cd llama-source
+          mkdir build && cd build
+          cmake .. ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DGGML_CUDA=ON ^
+            -DCMAKE_CUDA_ARCHITECTURES="89;90" ^
+            -DGGML_CUDA_FA_ALL_QUANTS=ON ^
+            -DLLAMA_BUILD_EXAMPLES=OFF ^
+            -DLLAMA_BUILD_TESTS=OFF ^
+            -DLLAMA_BUILD_SERVER=ON ^
+            -DGGML_NATIVE=OFF ^
+            -DGGML_AVX2=ON ^
+            -DGGML_FMA=ON ^
+            -DGGML_F16C=ON ^
+            -DGGML_VULKAN=OFF ^
+            -DGGML_SYCL=OFF ^
+            -DGGML_KOMPUTE=OFF
+
+      - name: Build llama-server
+        shell: cmd
+        run: |
+          cd llama-source\build
+          cmake --build . --config Release --target llama-server -j 4
+
+      - name: Package Windows Binary
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName -Destination dist\llama-server.exe
+          Copy-Item start_server.bat -Destination dist\start_server.bat
+          Compress-Archive -Path dist\* -DestinationPath dist\llama-server-rtx5060ti-win-x64.zip
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifact
+          path: dist/llama-server-rtx5060ti-win-x64.zip
+
+  publish-release:
+    name: Publish Releases (Linux & Windows)
+    needs: [build-cuda-linux, build-cuda-windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifact
+          path: release-files
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifact
+          path: release-files
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v1.0.0' }}
+          tag_name: ${{ github.event.inputs.tag_name || 'v1.1.0' }}
           name: "llama-server Hardware Custom (RTX 5060 Ti + i5-13400)"
           body: |
-            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400
+            ## Tailored llama-server for RTX 5060 Ti 16GB + Intel i5-13400 (Linux & Windows 11)
             - **CUDA Arch**: RTX 5060 Ti / Ada / Blackwell (89, 90) + FlashAttention
             - **CPU Flags**: AVX2, FMA, F16C
-            - **Optimizations**: Stripped minimal single-binary build, zero unused dependencies.
-          files: dist/llama-server-rtx5060ti-linux-x64.tar.gz
+            - **Platforms**: Linux x64 (`.tar.gz`) & Windows 11 x64 (`.zip`)
+            - **Optimizations**: Minimal single-binary build with pre-configured start scripts.
+          files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

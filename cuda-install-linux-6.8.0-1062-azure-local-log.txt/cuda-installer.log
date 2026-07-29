@@ -1,0 +1,79 @@
+[INFO]: Setting silent=true
+[INFO]: Setting toolkit=true
+[INFO]: Setting samples=true
+[INFO]: Driver not installed.
+[INFO]: Checking compiler version...
+[INFO]: gcc location: /usr/bin/gcc
+
+[INFO]: gcc version: gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.3) 
+
+[INFO]: Initializing menu
+[INFO]: nvidia-fs.setKOVersion(2.22.3)
+[INFO]: Silent install option: skipping driver
+[INFO]: Installing: CUDA Toolkit 12.6
+[INFO]: Installing: CUDA Libraries 12.6
+[INFO]: Installing: CUDA Development 12.6
+[INFO]: Installing: libcufft-dev
+[INFO]: Installing: libnvjpeg-dev
+[INFO]: Installing: libnvjitlink-dev
+[INFO]: Installing: libnvfatbin-dev
+[INFO]: Installing: libnpp-dev
+[INFO]: Installing: libcusparse-dev
+[INFO]: Installing: libcusolver-dev
+[WARNING]: Skipping copy. File already exists at: /usr/local/cuda-12.6/targets/x86_64-linux/lib/stubs/libcusolverMg.so
+[INFO]: Installing: libcurand-dev
+[INFO]: Installing: libcufile-dev
+[INFO]: Installing: cuda-cccl
+[INFO]: Installing: libcublas-dev
+[INFO]: Installing: cuda-profiler-api
+[INFO]: Installing: cuda-opencl-dev
+[INFO]: Installing: cuda-nvrtc-dev
+[INFO]: Installing: cuda-nvml-dev
+[INFO]: Installing: cuda-driver-dev
+[INFO]: Installing: cuda-cudart-dev
+[INFO]: Installing: CUDA Runtime 12.6
+[INFO]: Installing: cuda-cudart
+[INFO]: Installing: cuda-nvrtc
+[INFO]: Installing: cuda-opencl
+[INFO]: Installing: libcublas12
+[INFO]: Installing: libcufft
+[INFO]: Installing: libcufile
+[WARNING]: Skipping copy. File already exists at: /usr/local/cuda-12.6/targets/x86_64-linux/include/cufile.h
+[INFO]: Installing: libcurand
+[INFO]: Installing: libcusolver
+[INFO]: Installing: libcusparse
+[WARNING]: Skipping copy. File already exists at: /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcusparse.so.12.5.3.3
+[INFO]: Installing: libnpp
+[INFO]: Installing: libnvfatbin
+[INFO]: Installing: libnvjitlink
+[INFO]: Installing: libnvjpeg
+[INFO]: Installing: CUDA Tools 12.6
+[INFO]: Installing: CUDA Command Line Tools 12.6
+[INFO]: Installing: cuda-cupti
+[INFO]: Installing: cuda-gdb
+[INFO]: Installing: nvdisasm
+[INFO]: Installing: nvprof
+[INFO]: Installing: nvtx
+[INFO]: Installing: compute-sanitizer
+[INFO]: Installing: compute-sanitizer-integration
+[INFO]: Installing: CUDA Visual Tools 12.6
+[INFO]: Installing: nsight
+[INFO]: Installing: nsight-compute
+[INFO]: Installing: cuda-nsight-compute-integration
+[INFO]: Installing: nsight-systems
+[INFO]: Installing: cuda-nsight-systems-integration
+[INFO]: Installing: nvvp
+[INFO]: Installing: CUDA Compiler 12.6
+[INFO]: Installing: cuda-cuobjdump
+[INFO]: Installing: cuda-cuxxfilt
+[INFO]: Installing: cuda-nvcc
+[INFO]: Installing: cuda-nvvm
+[INFO]: Installing: cuda-crt
+[WARNING]: Skipping copy. File already exists at: /usr/local/cuda-12.6/bin/crt/prelink.stub
+[WARNING]: Skipping copy. File already exists at: /usr/local/cuda-12.6/bin/crt/link.stub
+[INFO]: Installing: cuda-nvprune
+[INFO]: Installing: CUDA Demo Suite 12.6
+[WARNING]: Cannot find manpages to install.
+[INFO]: Installing: CUDA Documentation 12.6
+[WARNING]: Skipping copy. File already exists at: /usr/local/cuda-12.6/bin/cuda-uninstaller
+[WARNING]: Cannot find manpages to install.
