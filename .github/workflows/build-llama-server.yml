@@ -70,6 +70,7 @@ jobs:
             -DGGML_VULKAN=OFF \
             -DGGML_SYCL=OFF \
             -DGGML_KOMPUTE=OFF
+            -DGGML_CUDA_FORCE_CUBLAS=OFF
 
       - name: Build llama-server
         run: |
@@ -114,7 +115,7 @@ jobs:
       - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: '12.8.0'
 
       - name: Checkout llama.cpp source & Patch Static CUDA Linkage
         shell: powershell
