@@ -6,7 +6,7 @@ on:
       tag_name:
         description: 'Release Tag'
         required: true
-        default: 'v3.1.0'
+        default: 'v3.2.0'
   push:
     tags:
       - 'v*'
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-cuda-linux:
-    name: Build Linux CUDA Standalone llama-server (sm_120)
+    name: Build Linux CUDA Standalone llama-server (CUDA 12.8.1, sm_89;90;120)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repository
@@ -28,7 +28,7 @@ jobs:
       - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: '12.8.1'
 
       - name: Checkout llama.cpp source & resolve build number
         run: |
@@ -58,7 +58,8 @@ jobs:
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON \
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DGGML_CUDA=ON \
-            -DCMAKE_CUDA_ARCHITECTURES="120" \
+            -DGGML_CUDA_FORCE_CUBLAS=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES="89;90;120" \
             -DGGML_CUDA_FA_ALL_QUANTS=ON \
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_TESTS=OFF \
@@ -89,7 +90,7 @@ jobs:
       - name: Package Binary
         run: |
           mkdir -p dist
-          BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
+          BIN_PATH=$(find llama-source/build -name "llama-source/build/bin/llama-server" -type f 2>/dev/null || find llama-source/build -name "llama-server" -type f -executable | head -n 1)
           strip "$BIN_PATH" || true
           cp "$BIN_PATH" dist/
           cd dist
@@ -102,7 +103,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-linux-x64.tar.gz
 
   build-cuda-windows:
-    name: Build Windows 11 True Single-Binary llama-server (sm_120, Zero DLL)
+    name: Build Windows 11 True Single-Binary llama-server (CUDA 12.8.1, Performance Optimized)
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
@@ -114,7 +115,7 @@ jobs:
       - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: '12.8.1'
 
       - name: Checkout llama.cpp source & Patch Static CUDA Linkage
         shell: powershell
@@ -142,7 +143,7 @@ jobs:
               Set-Content $_.FullName $content
           }
 
-      - name: Configure CMake (static CUDA runtime, sm_120)
+      - name: Configure CMake (CUDA 12.8.1, static cudart, GGML_CUDA_FORCE_CUBLAS=OFF, sm_89;90;120)
         shell: powershell
         run: |
           Set-Location llama-source
@@ -156,7 +157,8 @@ jobs:
             -DCUDA_USE_STATIC_CUDA_RUNTIME=ON `
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static `
             -DGGML_CUDA=ON `
-            -DCMAKE_CUDA_ARCHITECTURES="120" `
+            -DGGML_CUDA_FORCE_CUBLAS=OFF `
+            -DCMAKE_CUDA_ARCHITECTURES="89;90;120" `
             -DGGML_CUDA_FA_ALL_QUANTS=ON `
             -DLLAMA_BUILD_EXAMPLES=OFF `
             -DLLAMA_BUILD_TESTS=OFF `
@@ -212,7 +214,7 @@ jobs:
           path: dist/llama-server-rtx5060ti-win-v3.zip
 
   publish-release:
-    name: Publish True Standalone Releases (Zero DLL, sm_120)
+    name: Publish True Standalone Releases (CUDA 12.8.1, High Performance)
     needs: [build-cuda-linux, build-cuda-windows]
     runs-on: ubuntu-22.04
     steps:
@@ -231,14 +233,14 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || 'v3.1.0' }}
-          name: "llama-server Pure Single-Binary v3.1.0 (Zero DLL Verified, sm_120)"
+          tag_name: ${{ github.event.inputs.tag_name || 'v3.2.0' }}
+          name: "llama-server Pure Performance Release v3.2.0 (CUDA 12.8.1)"
           body: |
-            ## Pure Standalone llama-server (RTX 5060 Ti 16GB, Blackwell sm_120 + Intel i5-13400)
-            - **Target arch**: `CMAKE_CUDA_ARCHITECTURES=120` (Blackwell).
-            - **Toolchain**: CUDA Toolkit 13.2 via updated `Jimver/cuda-toolkit@v0.2.35`.
-            - **Zero DLL Requirement**: cudart patched to static target `CUDA::cudart_static`.
-            - **CPU Flags**: AVX2, FMA, F16C (matches i5-13400).
+            ## High Performance llama-server (RTX 5060 Ti 16GB, CUDA 12.8.1 + Intel i5-13400)
+            - **Toolchain**: Retuned to CUDA Toolkit 12.8.1 for optimal ggml-cuda SASS kernel emission.
+            - **Architectures**: `CMAKE_CUDA_ARCHITECTURES="89;90;120"` (Ada + Hopper + Blackwell mature SASS kernels embedded).
+            - **Flag**: `-DGGML_CUDA_FORCE_CUBLAS=OFF` for balanced custom MMQ & cuBLAS acceleration.
+            - **CPU Flags**: AVX2, FMA, F16C (i5-13400).
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
