@@ -173,16 +173,15 @@ jobs:
           cmake --build . --config Release --target llama-server -j 4
 
       - name: Verify Dependencies with dumpbin (must NOT show cudart DLLs)
-        shell: powershell
+        shell: cmd
         run: |
-          $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
-          Write-Host "Found $($exe.FullName)"
-          $deps = & dumpbin /DEPENDENTS "$($exe.FullName)" 2>&1
-          $deps | Write-Host
-          if ($deps -match 'cudart64') {
-            Write-Error "仍然动态依赖 cudart 相关 DLL，静态化补丁未完全生效"
-            exit 1
-          }
+          cd llama-source\build
+          for /r %%i in (llama-server.exe) do (
+            echo Found %%i
+            dumpbin /DEPENDENTS "%%i" > deps.txt
+            type deps.txt
+            findstr /I "cudart64" deps.txt && (echo ERROR: Dynamic cudart dependency found & exit 1) || echo OK: Zero DLL verified
+          )
 
       - name: Package True Standalone Executable
         shell: powershell
