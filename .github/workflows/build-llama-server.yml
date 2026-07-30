@@ -79,7 +79,7 @@ jobs:
 
       - name: Verify no dynamic CUDA runtime dependency
         run: |
-          BIN_PATH=$(find llama-source/build -name "llama-server" -type f -executable | head -n 1)
+          BIN_PATH=$(find llama-source/build -name "llama-source/build/bin/llama-server" -type f 2>/dev/null || find llama-source/build -name "llama-server" -type f -executable | head -n 1)
           echo "Checking $BIN_PATH"
           ldd "$BIN_PATH" || true
           if ldd "$BIN_PATH" | grep -qiE 'libcudart'; then
