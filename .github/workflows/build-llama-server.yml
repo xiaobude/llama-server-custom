@@ -108,6 +108,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Setup CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
@@ -173,21 +176,30 @@ jobs:
           cmake --build . --config Release --target llama-server -j 4
 
       - name: Verify Dependencies with dumpbin (must NOT show cudart DLLs)
-        shell: cmd
+        shell: powershell
         run: |
-          cd llama-source\build
-          for /r %%i in (llama-server.exe) do (
-            echo Found %%i
-            dumpbin /DEPENDENTS "%%i" > deps.txt
-            type deps.txt
-            findstr /I "cudart64" deps.txt && (echo ERROR: Dynamic cudart dependency found & exit 1) || echo OK: Zero DLL verified
-          )
+          $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Where-Object { $_.FullName -match '\\bin\\' } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
+          }
+          Write-Host "Verifying executable: $($exe.FullName)"
+          $deps = & dumpbin /DEPENDENTS "$($exe.FullName)" 2>&1
+          $deps | Write-Host
+          if ($deps -match 'cudart64') {
+            Write-Error "仍然动态依赖 cudart 相关 DLL，静态化补丁未完全生效"
+            exit 1
+          } else {
+            Write-Host "OK: Zero DLL verified for $($exe.Name)"
+          }
 
       - name: Package True Standalone Executable
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
+          $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Where-Object { $_.FullName -match '\\bin\\' } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path llama-source\build -Recurse -Filter "llama-server.exe" | Select-Object -First 1
+          }
           Copy-Item $exe.FullName -Destination dist\llama-server.exe
           Copy-Item start_server.bat -Destination dist\start_server.bat
           Get-ChildItem -Path dist
