@@ -6,7 +6,7 @@
 
 1. **GPU 硬件加速**:
    - 开启 `-DGGML_CUDA=ON`
-   - 目标 Compute Architecture 涵盖 Ampere/Ada/Blackwell (`75;80;86;89;90`)
+   - 目标 Compute Architecture 涵盖 Ampere/Ada/Blackwell (`75;80;86;89;90;120`)
    - 开启 FlashAttention (`-DGGML_CUDA_FA_ALL_QUANTS=ON`)
 2. **CPU 指令集与精简**:
    - 开启 `AVX2` / `FMA` / `F16C` 指令支持
