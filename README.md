@@ -34,3 +34,5 @@
    ```bash
    ./start_server.sh /path/to/your/model.gguf
    ```
+## 关于本地编译
+   build_local_cuda_v12.8.ps1 、build_local_cuda_v13.2.ps1 两个文件分别使用cuda v12.8 /cuda v13.2在本地极速编译出llama-server.exe单文件
